@@ -160,7 +160,7 @@ struct Node {
  * @attr up: id of the last node cell id having the same var. -1 if empty
  * @attr var: corresponding variable
  * @attr count: number of options having the variable
- * DanceDD的标题单元格
+ * DanceDD的Header结构，管理变量列。
  * @attr左：前一个标题单元格的id
  * @attr right：下一个标题单元格的id。
  * @attr down：具有相同var的第一个节点单元id的id，如果为空则为-1
@@ -191,19 +191,20 @@ struct Header {
     int16_t left;
     int16_t right;
     uint16_t var;
-    uint16_t padding1;  // dummy value
+    uint16_t padding1;  // dummy value Padding for memory alingnment
     int32_t down;
     int32_t up;
     count_t count;
-    int32_t padding2;
+    int32_t padding2;   // additional padding
 };
 
 /**
  * DanceDD structure
+ * 主类表示具有附加链接功能的ZDD。
  */
 class ZddWithLinks {
    public:
-    // counters
+    // 用于各种操作的静态计数器。
     static uint64_t num_search_tree_nodes;
     static uint64_t num_solutions;
     static uint64_t num_updates;
@@ -218,9 +219,9 @@ class ZddWithLinks {
     bool operator==(const ZddWithLinks &obj) const;
 
     /**
-     * The main recursive procedure.
-     * @param solution: partioal solution found so far
-     * @param depth: depth of the search tree, initially depht= 0
+     *递归搜索解决方案。
+     *@param solution-存储已找到解决方案。
+     *@param depth-当前搜索深度。
      */
     void search(vector<vector<uint16_t>> &solution, const int depth);
 
@@ -232,6 +233,7 @@ class ZddWithLinks {
     void load_zdd_from_file(const string &file_name);
 
     // check validity of the dancedd structure
+    // 检查dancedd的结构有效性。
     bool sanity() const;
 
    private:

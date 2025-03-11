@@ -5,7 +5,7 @@
 #include <unordered_set>
 
 #include "dancing_on_zdd.h" // 包含ZDD相关的操作
-#include "dp_manager.h" // DP？
+#include "dp_manager.h"
 
 /**
  * main function
