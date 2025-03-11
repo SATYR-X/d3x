@@ -20,29 +20,34 @@
 
 #include "hidden_node_stack.h"
 using namespace std;
+// 前向声明，避免头文件之间的循环依赖
 class DpManager;
 class HiddenNodeStack;
 
 /**
  * constants
  */
+// 代表 ZDD 结构中的终端节点（1-terminal）
 constexpr int DD_ONE_TERM =
     -1;  // represents the $\top$-terminal node of DanceDD.
+// 代表 ZDD 结构中的终端节点（0-terminal）。
 constexpr int DD_ZERO_TERM =
     -2;  // represents the $\bot$-terminal node of DanceDD
 constexpr int MAX_DEPTH = 1000;  // maximum depth of the search tree.
-using nstack_t = std::stack<int32_t>;
-using count_t = uint32_t;
+using nstack_t = std::stack<int32_t>;// 定义节点栈类型
+using count_t = uint32_t;// 计数类型
 
 /**
  * type of parent links
  * lower 2 bits are used for flags, remaining bits are used for showing parent
  * nodes.
+ * 父链接类型
+ * 低2位用于标志，其余位用于存储父节点信息
  */
-using plink_t = uint32_t;  //
-constexpr uint32_t PLINK_IS_TERMINAL = 2LU;
-constexpr uint32_t PLINK_IS_HI = 1LU;
-constexpr uint32_t PLINK_ADDR_OFFSET = 2LU;
+using plink_t = uint32_t;
+constexpr uint32_t PLINK_IS_TERMINAL = 2LU; // 终端节点标志
+constexpr uint32_t PLINK_IS_HI = 1LU;       // HI（1-分支）链接标志
+constexpr uint32_t PLINK_ADDR_OFFSET = 2LU; // 地址偏移量
 
 /**
  * Node cell
@@ -62,10 +67,30 @@ constexpr uint32_t PLINK_ADDR_OFFSET = 2LU;
  * @attr count_upper: number of routes from the root danceDD node.
  * @attr count_hi: the number of routes from the hi-child to TOP-terminal.
  * @attr count_lo: the number of routes from the lo-child to TOP-terminal.
-
+ * 节点单元
+ * @attr var：对应的变量
+ * @attr hi: hi子节点的节点单元id
+ * @attr lo: lo-child的节点单元id
+ * @attr up：具有相同var的前一个节点单元的id，如果没有这样的单元存在，取值为-1。
+ * @attr down：具有相同var的下一个节点单元的id，如果没有这样的单元存在，取值为-1。
+ * @attr parents_head：父节点列表的头部。
+ * @attr parents_tail：父ndoe列表的尾部。
+ * @attr hi_next：指向同一子节点的hi-edge的下一条边。
+ * @attr hi_prev：指向同一子节点的高边的前一条边
+ * @attr lo_next：指向同一子节点的lo-edge的下一个边。
+ * @attr lo_prev：指向同一子节点的lo_edge的前一条边
+ * @attr count_upper：来自根节点danceDD的路由数。
+ * @attr count_hi：从hi-child到TOP-terminal的路由数。
+ * @attr count_lo：从lo子节点到TOP-terminal的路由数。
  */
 struct Node {
    public:
+   /**
+     * @brief 构造函数，初始化节点。
+     * @param var 变量编号。
+     * @param hi 1-分支的子节点 ID。
+     * @param lo 0-分支的子节点 ID。
+     */
     Node(uint16_t var, int32_t hi, int32_t lo)
         : hi(hi),
           lo(lo),
@@ -82,7 +107,7 @@ struct Node {
           count_upper(0),
           var(var),
           padding(0) {}
-
+    // 拷贝构造
     Node(const Node &obj)
         : hi(obj.hi),
           lo(obj.lo),
@@ -99,7 +124,7 @@ struct Node {
           count_upper(obj.count_upper),
           var(obj.var),
           padding(obj.padding) {}
-
+    // 操作符重载
     bool operator==(const Node &obj) const {
         return var == obj.var && hi == obj.hi && lo == obj.lo && up == obj.up &&
                down == obj.down && parents_head == obj.parents_head &&
@@ -108,7 +133,7 @@ struct Node {
                lo_prev == obj.lo_prev && count_upper == obj.count_upper &&
                count_hi == obj.count_hi && count_lo == obj.count_lo;
     }
-
+    // 判断两个node是否不相同
     bool operator!=(const Node &obj) const { return !(*this == obj); }
     int32_t hi;
     int32_t lo;
@@ -123,8 +148,8 @@ struct Node {
     count_t count_hi;
     count_t count_lo;
     count_t count_upper;
-    uint16_t var;
-    uint16_t padding;
+    uint16_t var;// Variable associated with this node.
+    uint16_t padding;// Padding for memory alignment.
 };
 
 /**
@@ -135,6 +160,13 @@ struct Node {
  * @attr up: id of the last node cell id having the same var. -1 if empty
  * @attr var: corresponding variable
  * @attr count: number of options having the variable
+ * DanceDD的标题单元格
+ * @attr左：前一个标题单元格的id
+ * @attr right：下一个标题单元格的id。
+ * @attr down：具有相同var的第一个节点单元id的id，如果为空则为-1
+ * @attr up：具有相同var的最后一个节点单元id的id，如果为空则为-1
+ * @attr var：对应的变量
+ * @attr count：拥有该变量的选项数
  */
 struct Header {
    public:
