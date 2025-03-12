@@ -206,13 +206,13 @@ struct Header {
 class ZddWithLinks {
    public:
     // 用于各种操作的静态计数器。
-    static uint64_t num_search_tree_nodes;
-    static uint64_t num_solutions;
-    static uint64_t num_updates;
-    static uint64_t num_head_updates;
-    static uint64_t num_inactive_updates;
-    static uint64_t num_hides;
-    static uint64_t num_failure_backtracks;
+    static uint64_t num_search_tree_nodes; // 搜索树节点的数量
+    static uint64_t num_solutions;         // 解决方案的数量
+    static uint64_t num_updates;           // 更新操作的数量
+    static uint64_t num_head_updates;      // 头部更新的数量
+    static uint64_t num_inactive_updates;  // 非活动更新的数量
+    static uint64_t num_hides;             // 隐藏操作的数量
+    static uint64_t num_failure_backtracks;// 失败回溯的数量
 
     ZddWithLinks(int num_var, bool sanity_check = false);
     ZddWithLinks(const ZddWithLinks &obj);
@@ -548,25 +548,46 @@ class ZddWithLinks {
         std::cerr << endl;
     }
 
+    // ZDD中变量的数量
     const int num_var_;
 
-    // storing the node cells
+    // 存储节点单元的向量
     vector<Node> table_;
-    // storing the header cells
+
+    // 存储头部单元的向量
     vector<Header> header_;
 
+    // 动态规划管理器的智能指针
     unique_ptr<DpManager> dp_mgr_;
+
+    // 隐藏节点栈的智能指针
     unique_ptr<HiddenNodeStack> hidden_node_stack_;
+
+    // 是否进行完整性检查的标志
     const bool sanity_check_;
 
-    // buffers used in the search.
+    // 搜索过程中每个深度的选择缓冲区
     vector<vector<uint16_t>> depth_choice_buf_;
+
+    // 上方向选择的缓冲区。用于记录和管理上方向的选择路径。
     vector<vector<uint16_t>> depth_upper_choice_buf_;
+
+    // 下方向选择的缓冲区
     vector<vector<uint16_t>> depth_lower_choice_buf_;
+
+    // 下方向的跟踪信息缓冲区
     vector<vector<uint32_t>> depth_lower_trace_buf_;
+
+    // 下方向选择变化的索引缓冲区
     vector<vector<size_t>> depth_lower_change_pts_buf_;
+
+    // 上方向的跟踪信息缓冲区。帮助在搜索过程中记录访问的节点和路径。
     vector<vector<uint32_t>> depth_upper_trace_buf_;
+
+    // 上方向选择变化的索引缓冲区。用于记录和管理选择路径中涉及的节点变化。
     vector<vector<size_t>> depth_upper_change_pts_buf_;
+
+    // 上方向选择变化的节点ID缓冲区。用于记录和管理选择路径中涉及的节点变化。
     vector<vector<int32_t>> depth_upper_change_node_ids_buf_;
 };
 #endif  // DANCING_ON_ZDD_H_
