@@ -1,4 +1,5 @@
-// dancing on decision diagrams
+// dancing_on_zdd.h 头文件的实现文件
+// 该文件实现了 ZddWithLinks 类的功能，主要用于管理和操作具有附加链接功能的 ZDD 结构。
 
 #include "dancing_on_zdd.h"
 
@@ -8,6 +9,7 @@
 #include "dp_manager.h"
 // 引入 DpManager 类用于管理动态规划相关的操作，提升搜索与覆盖效率
 
+// 初始化静态计数器变量，用于跟踪ZDD操作的统计信息
 uint64_t ZddWithLinks::num_inactive_updates = 0UL;
 uint64_t ZddWithLinks::num_search_tree_nodes = 0UL;
 uint64_t ZddWithLinks::num_updates = 0UL;
@@ -16,6 +18,12 @@ uint64_t ZddWithLinks::num_solutions = 0UL;
 uint64_t ZddWithLinks::num_hides = 0UL;
 uint64_t ZddWithLinks::num_failure_backtracks = 0UL;
 
+/**
+ * ZddWithLinks 类的构造函数
+ * @param num_var 变量的数量。
+ * @param sanity_check 是否进行一致性检查。
+ * 初始化 ZDD 结构，设置节点和头部单元，并准备动态规划管理器和隐藏节点栈。
+ */
 ZddWithLinks::ZddWithLinks(int num_var, bool sanity_check)
     : num_var_(num_var),
       table_(),
@@ -30,14 +38,19 @@ ZddWithLinks::ZddWithLinks(int num_var, bool sanity_check)
       depth_upper_trace_buf_(MAX_DEPTH, std::vector<uint32_t>()),
       depth_upper_change_pts_buf_(MAX_DEPTH, std::vector<size_t>()),
       depth_upper_change_node_ids_buf_(MAX_DEPTH, std::vector<int32_t>()) {
-    header_.emplace_back(num_var_, 1, -1, -1, 0,
-                         0);  // the head of header cells
+    // 初始化头部单元，管理变量列。
+    header_.emplace_back(num_var_, 1, -1, -1, 0, 0);  // 头部单元的头部
     for (int i = 0; i < num_var_; i++) {
-        header_.emplace_back(i, i + 2, -1, -1, i + 1, 0);
+        header_.emplace_back(i, i + 2, -1, -1, i + 1, 0);  // 初始化每个变量的头部单元
     }
-    header_[num_var].right = 0;
+    header_[num_var].right = 0;  // 设置最后一个头部单元的右链接为0，表示结束
 }
 
+/**
+ * ZddWithLinks 类的拷贝构造函数
+ * @param obj 要复制的 ZddWithLinks 对象。
+ * 复制 ZDD 结构的节点和头部单元，但不复制动态规划管理器和隐藏节点栈。
+ */
 ZddWithLinks::ZddWithLinks(const ZddWithLinks &obj)
     : num_var_(obj.num_var_),
       table_(obj.table_),
@@ -49,8 +62,12 @@ ZddWithLinks::ZddWithLinks(const ZddWithLinks &obj)
       depth_upper_choice_buf_(MAX_DEPTH, std::vector<uint16_t>()),
       depth_lower_choice_buf_(MAX_DEPTH, std::vector<uint16_t>()) {}
 
+/**
+ * 操作符重载，用于调试时比较两个 ZddWithLinks 对象是否相等
+ * @param obj 要比较的 ZddWithLinks 对象。
+ * @return 如果两个对象相等则返回 true，否则返回 false。
+ */
 bool ZddWithLinks::operator==(const ZddWithLinks &obj) const {
-    // intended to be used for debugging.
     if (num_var_ != obj.num_var_) return false;
 
     if (table_.size() != obj.table_.size()) return false;
@@ -71,17 +88,22 @@ bool ZddWithLinks::operator==(const ZddWithLinks &obj) const {
     return equals;
 }
 
+/**
+ * 递归搜索 ZDD 结构中的解决方案。
+ * @param solution 存储已找到的解决方案。
+ * @param depth 当前搜索深度。
+ * 通过递归搜索，找到所有可能的解决方案。
+ */
 void ZddWithLinks::search(vector<vector<uint16_t>> &solution, const int depth) {
     num_search_tree_nodes++;
 
-    if (header_[0].right == 0)  // all columns are covered
+    if (header_[0].right == 0)  // 所有列都被覆盖
     {
         num_solutions += 1;
-
         return;
     }
 
-    // choose the column with minimum count
+    // 选择具有最小选项数的列
     count_t min_count = UINT32_MAX;
     int min_count_column = -1;
     int remain_cols = 0;
@@ -91,7 +113,7 @@ void ZddWithLinks::search(vector<vector<uint16_t>> &solution, const int depth) {
         remain_cols++;
 
         if (header.count == 0) {
-            // cannot cover column, backtrack.
+            // 无法覆盖列，回溯。
             num_failure_backtracks++;
             return;
         }
@@ -111,7 +133,7 @@ void ZddWithLinks::search(vector<vector<uint16_t>> &solution, const int depth) {
     int lower_change_idx = -1;
 
     while (node_id >= 0) {
-        // choose an option and cover columns
+        // 选择一个选项并覆盖列
         const Node &node = table_[node_id];
 
         for (auto up_id = 0; up_id < node.count_upper; ++up_id) {
@@ -151,6 +173,11 @@ void ZddWithLinks::search(vector<vector<uint16_t>> &solution, const int depth) {
     return;
 }
 
+/**
+ * 从文件加载ZDD数据。
+ * @param file_name ZDD文件名。
+ * 读取文件内容并将其解析为ZDD结构。
+ */
 void ZddWithLinks::load_zdd_from_file(const string &file_name) {
     ifstream ifs(file_name);
 
@@ -199,6 +226,12 @@ void ZddWithLinks::load_zdd_from_file(const string &file_name) {
     setup_dancing_links();
 }
 
+/**
+ * 批量覆盖给定的列。
+ * @param col_begin 列开始的迭代器。
+ * @param col_end 列结束的迭代器。
+ * 通过覆盖列来更新数据结构，隐藏相关节点。
+ */
 void ZddWithLinks::batch_cover(
     const std::vector<uint16_t>::const_iterator col_begin,
     const std::vector<uint16_t>::const_iterator col_end) {
@@ -206,7 +239,7 @@ void ZddWithLinks::batch_cover(
     if (col_begin == col_end) {
         return;
     }
-    // cover headers
+    // 覆盖头部
     for (auto it = col_begin; it != col_end; ++it) {
         const auto col = *it;
         num_head_updates++;
@@ -238,7 +271,6 @@ void ZddWithLinks::batch_cover(
                     assert(node.count_hi > 0);
                     auto nhi = node.hi, nlo = node.lo;
                     if (nhi >= 0 && node.count_hi > 0 && node.count_upper > 0) {
-                        //                    if (nhi >= 0) {
                         dp_mgr_->add_node_diff_count(table_[nhi].var, nhi,
                                                      node.count_upper);
                     }
@@ -265,15 +297,10 @@ void ZddWithLinks::batch_cover(
                         } else {
                             var_head.up = nup;
                         }
-                        if (nlo >= 0) {
-                            auto lo_next = node.lo_next, lo_prev = node.lo_prev;
-                            plink_set_prev(lo_next, lo_prev);
-                            plink_set_next(lo_prev, lo_next);
-                        }
-                    }
 
-                    hide_node_cover_down(node_id);
-                    hidden_node_stack_->push_cover_down(node_id);
+                        hide_node_upperzero(node_id);
+                        hidden_node_stack_->push_upperzero(node_id);
+                    }
                 }
             } else {  // var が cover_columnsではなかった場合
 
@@ -302,7 +329,7 @@ void ZddWithLinks::batch_cover(
                                                      upper_count);
                     }
 
-                    // hide nodes
+                    // 隐藏节点
                     if (node.count_upper == 0) {
                         num_hides++;
                         auto nup = node.up, ndown = node.down;
@@ -322,123 +349,11 @@ void ZddWithLinks::batch_cover(
                     }
                 }
             }
-            // clear dp counter
+            // 清除动态规划计数器
             dp_mgr_->clear_var_counter(var);
         }
     }
 
-    hidden_node_stack_->push_checkpoint();
-    // processing upper nodes
-    for (auto it = col_begin; it != col_end; ++it) {
-        const auto col = *it;
-        dp_mgr_->add_upper_var(col);
-    }
-    auto next_cover_column = make_reverse_iterator(col_end);
-    auto col_rend = make_reverse_iterator(col_begin);
-    for (auto var = dp_mgr_->upper_nonzero_var(); var != 0;
-         var = dp_mgr_->upper_nonzero_var()) {
-        if (next_cover_column != col_rend && var == *next_cover_column) {
-            next_cover_column++;
-
-            for (auto node_id = header_[var].down; node_id >= 0;
-                 node_id = table_[node_id].down) {
-                num_updates++;
-                Node &node = table_[node_id];
-
-                assert(node.count_hi > 0);
-                assert(dp_mgr_->high_count_at(node_id) == 0);
-                const auto count_diff =
-                    dp_mgr_->get_low_count_and_clear(node_id);
-
-                if (node.count_upper > 0) {
-                    if (!plink_is_term(node.parents_head)) {
-                        for (auto plink = node.parents_head;;
-                             plink = plink_get_next(plink)) {
-                            const auto parent_id = plink_node_id(plink);
-                            const Node &parent = table_[parent_id];
-
-                            if (plink_is_hi(plink)) {
-                                dp_mgr_->add_node_diff_count_high(
-                                    parent.var, parent_id,
-                                    count_diff + node.count_hi);
-                            } else {
-                                dp_mgr_->add_node_diff_count_low(
-                                    parent.var, parent_id,
-                                    count_diff + node.count_hi);
-                            }
-                            if (plink == node.parents_tail) break;
-                        }
-                    }
-                }
-
-                hidden_node_stack_->push_cover_up(node_id);
-            }
-        } else {  // var is not cover column
-            Header &var_head = header_[var];
-
-            for (size_t i = 0; i < dp_mgr_->num_elems(var); i++) {
-                num_updates++;
-                const auto node_id = dp_mgr_->at(var, i);
-                const auto low_count =
-                    dp_mgr_->get_low_count_and_clear(node_id);
-                const auto high_count =
-                    dp_mgr_->get_high_count_and_clear(node_id);
-                Node &node = table_[node_id];
-
-                auto c_hi = node.count_hi, c_lo = node.count_lo;
-                if (node.count_hi == 0) {
-                    num_inactive_updates++;
-                }
-                c_hi = c_hi - high_count;
-                c_lo = c_lo - low_count;
-                node.count_hi = c_hi, node.count_lo = c_lo;
-                // 今回の更新の結果node.count_hiがゼロになったらhideする．
-                bool hide_node = high_count > 0 && c_hi == 0;
-
-                var_head.count -= node.count_upper * high_count;
-
-                // 上流に伝播する．
-                if (!plink_is_term(node.parents_head)) {
-                    for (plink_t plink = node.parents_head;
-                         ;  //! plink_is_term(plink);
-                         plink = plink_get_next(plink)) {
-                        auto parent_id = plink_node_id(plink);
-                        assert(parent_id != node_id);
-
-                        Node &parent = table_[parent_id];
-                        // activeでない1枝経由の伝播はスキップ
-                        // 上流からのカウントがゼロのparentはスキップ．
-
-                        if (parent.count_upper == 0) {
-                            num_inactive_updates++;
-                            //     continue;
-                        }
-                        if (parent.count_upper > 0) {
-                            if (plink_is_hi(plink)) {
-                                dp_mgr_->add_node_diff_count_high(
-                                    parent.var, parent_id,
-                                    high_count + low_count);
-                            } else {
-                                dp_mgr_->add_node_diff_count_low(
-                                    parent.var, parent_id,
-                                    high_count + low_count);
-                            }
-                        }
-                        if (plink == node.parents_tail) {
-                            break;
-                        }
-                    }
-                }
-                assert(node.count_upper > 0);
-
-                if (hide_node) {
-                    num_hides++;
-                    hidden_node_stack_->push_lowerzero(node_id);
-                }
-            }
-        }
-        dp_mgr_->clear_var_counter(var);
-    }
     hidden_node_stack_->reverse_current_stack();
     for (auto it = hidden_node_stack_->stack_cbegin();
          it != hidden_node_stack_->stack_cend(); ++it) {
@@ -475,6 +390,12 @@ void ZddWithLinks::batch_cover(
     }
 }
 
+/**
+ * 批量取消覆盖给定的列。
+ * @param col_begin 列开始的迭代器。
+ * @param col_end 列结束的迭代器。
+ * 通过取消覆盖列来恢复数据结构，显示相关节点。
+ */
 void ZddWithLinks::batch_uncover(
     const std::vector<uint16_t>::const_iterator col_begin,
     const std::vector<uint16_t>::const_iterator col_end) {
@@ -487,7 +408,7 @@ void ZddWithLinks::batch_uncover(
     //     cerr << *it << ",";
     // }
     //    cerr << endl;
-    // unhide column headers
+    // 取消覆盖列头
     const auto col_rbegin = std::make_reverse_iterator(col_end);
     const auto col_rend = std::make_reverse_iterator(col_begin);
     for (auto it = col_rbegin; it != col_rend; ++it) {
@@ -530,171 +451,8 @@ void ZddWithLinks::batch_uncover(
 
             default:
                 assert(false);
-                cerr << "error: hide_node type must be either of CoverUp or "
-                        "LowerZero"
-                     << endl;
-                exit(1);
-        }
-    }
-    hidden_node_stack_->pop_checkpoint();
-
-    // 下から上の順番にcountを復元
-
-    {
-        auto next_cover_column = col_rbegin;
-
-        for (auto it = col_begin; it != col_end; ++it) {
-            dp_mgr_->add_upper_var(*it);
-        }
-        for (auto var = dp_mgr_->upper_nonzero_var(); var != 0;
-             var = dp_mgr_->upper_nonzero_var()) {
-            if (next_cover_column != col_rend && *next_cover_column == var) {
-                next_cover_column++;
-
-                for (auto node_id = header_[var].down; node_id >= 0;
-                     node_id = table_[node_id].down) {
-                    Node &node = table_[node_id];
-                    assert(node.count_hi > 0);
-                    assert(dp_mgr_->high_count_at(node_id) == 0);
-
-                    const auto count_diff =
-                        dp_mgr_->get_low_count_and_clear(node_id);
-
-                    if (!plink_is_term(node.parents_head)) {
-                        for (plink_t plink = node.parents_head;
-                             ;  // !plink_is_term(plink);
-                             plink = plink_get_next(plink)) {
-                            const auto parent_id = plink_node_id(plink);
-                            count_t pcount_upper;
-                            uint16_t pvar;
-                            pcount_upper = table_[parent_id].count_upper,
-                            pvar = table_[parent_id].var;
-
-                            if (pcount_upper > 0) {
-                                if (plink_is_hi(plink)) {
-                                    dp_mgr_->add_node_diff_count_high(
-                                        pvar, parent_id,
-                                        count_diff + node.count_hi);
-                                } else {
-                                    dp_mgr_->add_node_diff_count_low(
-                                        pvar, parent_id,
-                                        count_diff + node.count_hi);
-                                }
-                            }
-                            if (plink == node.parents_tail) {
-                                break;
-                            }
-                        }
-                    }
-                }
-            } else {  // var is not a covered column
-                Header &var_head = header_[var];
-
-                for (size_t i = 0; i < dp_mgr_->num_elems(var); i++) {
-                    const auto node_id = dp_mgr_->at(var, i);
-                    const auto low_count =
-                        dp_mgr_->get_low_count_and_clear(node_id);
-                    const auto high_count =
-                        dp_mgr_->get_high_count_and_clear(node_id);
-
-                    Node &node = table_[node_id];
-                    assert(node.count_upper > 0);
-                    node.count_lo += low_count, node.count_hi += high_count;
-
-                    var_head.count += node.count_upper * high_count;
-                    if (!plink_is_term(node.parents_head)) {
-                        for (plink_t plink = node.parents_head;
-                             ;  //! plink_is_term(plink);
-                             plink = plink_get_next(plink)) {
-                            auto parent_id = plink_node_id(plink);
-                            assert(parent_id != node_id);
-                            count_t pcount_upper;
-                            uint16_t pvar;
-                            pcount_upper = table_[parent_id].count_upper,
-                            pvar = table_[parent_id].var;
-                            if (pcount_upper > 0) {
-                                if (plink_is_hi(plink)) {
-                                    dp_mgr_->add_node_diff_count_high(
-                                        pvar, parent_id,
-                                        high_count + low_count);
-                                } else {
-                                    dp_mgr_->add_node_diff_count_low(
-                                        pvar, parent_id,
-                                        high_count + low_count);
-                                }
-                            }
-                            if (plink == node.parents_tail) break;
-                        }
-                    }
-                }
-            }
-            dp_mgr_->clear_var_counter(var);
-        }
-    }
-
-    // to lower nodes
-
-    while (!hidden_node_stack_->is_empty()) {
-        auto [node_id, hide_type] = hidden_node_stack_->top();
-        hidden_node_stack_->pop();
-
-        switch (hide_type) {
-            case HiddenNodeStack::HideType::CoverDown:
-                unhide_node_cover_down(node_id);
-                {
-                    int32_t nup, ndown;
-                    count_t cupper;
-                    uint16_t nvar;
-                    nup = table_[node_id].up, ndown = table_[node_id].down;
-                    cupper = table_[node_id].count_upper,
-                    nvar = table_[node_id].var;
-                    if (cupper == 0) {
-                        if (nup >= 0) {
-                            table_[nup].down = node_id;
-                        } else {
-                            header_[nvar].down = node_id;
-                        }
-                        if (ndown >= 0) {
-                            table_[ndown].up = node_id;
-                        } else {
-                            header_[nvar].up = node_id;
-                        }
-
-                        if (table_[node_id].lo >= 0) {
-                            auto lo_next = table_[node_id].lo_next,
-                                 lo_prev = table_[node_id].lo_prev;
-                            plink_set_prev(lo_next, node_id << 2UL);
-                            plink_set_next(lo_prev, node_id << 2UL);
-                        }
-                    }
-                }
-                break;
-
-            case HiddenNodeStack::HideType::UpperZero:
-                unhide_node_upperzero(node_id);
-
-                {
-                    Node &node = table_[node_id];
-                    auto nup = node.up, ndown = node.down;
-
-                    if (nup >= 0) {
-                        table_[nup].down = node_id;
-                    } else {
-                        header_[node.var].down = node_id;
-                    }
-                    if (ndown >= 0) {
-                        table_[ndown].up = node_id;
-                    } else {
-                        header_[node.var].up = node_id;
-                    }
-                }
-                break;
-
-            default:
-                assert(false);
-                cerr << "error: hide_node type must be either of CoverDown "
-                        "or "
-                        "UpperZero"
+                cerr << "error: hide_node type must be either of CoverUp "
+                        "or LowerZero"
                      << endl;
                 exit(1);
         }
@@ -766,14 +524,18 @@ void ZddWithLinks::batch_uncover(
     }
 }
 
+/**
+ * 设置舞动链接结构，初始化节点计数和链接关系。
+ * 初始化节点的计数和链接关系，准备动态规划管理器。
+ */
 void ZddWithLinks::setup_dancing_links() {
-    // initialize counts
+    // 初始化节点的计数
     for (Node &node : table_) {
         node.count_upper = 0;
         node.count_lo = 0;
         node.count_hi = 0;
     }
-    // compute lower counts
+    // 计算下方向的计数
     for (size_t i = 0; i < table_.size(); i++) {
         Node &node = table_[i];
         if (node.lo == DD_ZERO_TERM) {
@@ -792,7 +554,7 @@ void ZddWithLinks::setup_dancing_links() {
         }
     }
 
-    // compute upper counts
+    // 计算上方向的计数
     table_[table_.size() - 1].count_upper = 1;
     for (int i = table_.size() - 1; i >= 0; i--) {
         Node &node = table_[i];
@@ -803,7 +565,7 @@ void ZddWithLinks::setup_dancing_links() {
             table_[node.lo].count_upper += node.count_upper;
         }
     }
-    // set up up/down links
+    // 设置上下链接
     for (size_t i = 0; i < table_.size(); i++) {
         Node &node = table_[i];
         Header &header = header_[node.var];
@@ -827,7 +589,7 @@ void ZddWithLinks::setup_dancing_links() {
         }
         header.count += counts;
     }
-    // set parent node cells.
+    // 设置父节点单元
     for (size_t i = 0; i < table_.size(); i++) {
         Node &node = table_[i];
 
@@ -842,7 +604,7 @@ void ZddWithLinks::setup_dancing_links() {
             child.parents_tail = i << 2UL | 1UL;
 
         } else {
-            // these links will not be used;
+            // 这些链接将不会被使用
             node.hi_prev = UINT32_MAX;
             node.hi_next = UINT32_MAX;
         }
@@ -854,7 +616,7 @@ void ZddWithLinks::setup_dancing_links() {
 
             child.parents_tail = i << 2UL;
         } else {
-            // these links will not be used;
+            // 这些链接将不会被使用
             node.lo_prev = UINT32_MAX;
             node.lo_next = UINT32_MAX;
         }
@@ -862,6 +624,13 @@ void ZddWithLinks::setup_dancing_links() {
     dp_mgr_ = make_unique<DpManager>(table_, num_var_);
 }
 
+/**
+ * 计算上方向的选择路径
+ * @param node_id 节点 ID。
+ * @param up_id 上方向的 ID。
+ * @param choice 存储选择路径的向量。
+ * 计算从根节点到指定节点的选择路径。
+ */
 void ZddWithLinks::compute_upper_choice(int32_t node_id, count_t up_id,
                                         vector<uint16_t> &choice) noexcept {
     choice.clear();
@@ -870,7 +639,7 @@ void ZddWithLinks::compute_upper_choice(int32_t node_id, count_t up_id,
     for (;;) {
         const Node &node = table_[node_id];
         assert(node.count_upper > 0);
-        if (plink_is_term(node.parents_head)) {  // root node
+        if (plink_is_term(node.parents_head)) {  // 根节点
             assert(node.count_upper > 0);
             break;
         }
@@ -896,6 +665,15 @@ void ZddWithLinks::compute_upper_choice(int32_t node_id, count_t up_id,
     }
 }
 
+/**
+ * 初始化上方向的选择路径
+ * @param start_id 起始节点 ID。
+ * @param visited 记录访问过的节点。
+ * @param diff_choices 记录不同选择的索引。
+ * @param diff_choice_ids 记录不同选择的节点 ID。
+ * @param choices_buf 存储选择路径的缓冲区。
+ * 初始化从根节点到指定节点的选择路径。
+ */
 void ZddWithLinks::compute_upper_initial_choice(
     const int32_t start_id, vector<uint32_t> &visited,
     vector<size_t> &diff_choices, vector<int32_t> &diff_choice_ids,
@@ -916,8 +694,7 @@ void ZddWithLinks::compute_upper_initial_choice(
         plink_t link = node.parents_head;
         auto previous_id = node_id;
         node_id = plink_node_id(link);
-        assert(visited.empty() ||
-               table_[*(visited.rbegin()) >> 1].var > table_[node_id].var);
+        assert(visited.empty() || table_[*(visited.rbegin()) >> 1].var > table_[node_id].var);
         if (plink_is_hi(link)) {
             visited.push_back(node_id << 1U | 1U);
         } else {
@@ -952,11 +729,20 @@ void ZddWithLinks::compute_upper_initial_choice(
     }
 }
 
+/**
+ * 计算上方向的下一个选择路径
+ * @param visited 记录访问过的节点。
+ * @param diff_choices 记录不同选择的索引。
+ * @param diff_choice_ids 记录不同选择的节点 ID。
+ * @param choice_buf 存储选择路径的缓冲区。
+ * @return 如果没有更多选择路径则返回 true，否则返回 false。
+ * 计算从当前节点到下一个节点的选择路径。
+ */
 bool ZddWithLinks::compute_upper_next_choice(vector<uint32_t> &visited,
                                              vector<size_t> &diff_choices,
                                              vector<int32_t> &diff_choice_ids,
                                              vector<uint16_t> &choice_buf) {
-    // uncover
+    // 取消覆盖
     //    cerr << "update " << num_updates << endl;
     int var_prev = 100;
     for (const auto v : visited) {
@@ -1002,8 +788,7 @@ bool ZddWithLinks::compute_upper_next_choice(vector<uint32_t> &visited,
         }
         assert(!plink_is_term(plink));
         auto next_nid = plink_node_id(plink);
-        assert(visited.empty() ||
-               table_[*(visited.rbegin()) >> 1].var > table_[next_nid].var);
+        assert(visited.empty() || table_[*(visited.rbegin()) >> 1].var > table_[next_nid].var);
         assert(table_[next_nid].count_upper > 0);
         if (plink_is_hi(plink)) {
             visited.push_back(next_nid << 1U | 1U);
@@ -1040,8 +825,7 @@ bool ZddWithLinks::compute_upper_next_choice(vector<uint32_t> &visited,
         plink_t link = node.parents_head;
         int32_t previous_id = node_id;
         node_id = plink_node_id(link);
-        assert(visited.empty() ||
-               table_[*(visited.rbegin()) >> 1].var > table_[node_id].var);
+        assert(visited.empty() || table_[*(visited.rbegin()) >> 1].var > table_[node_id].var);
         if (plink_is_hi(link)) {
             visited.push_back(node_id << 1U | 1U);
         } else {
@@ -1075,6 +859,13 @@ bool ZddWithLinks::compute_upper_next_choice(vector<uint32_t> &visited,
     return false;
 }
 
+/**
+ * 计算下方向的选择路径
+ * @param node_id 节点 ID。
+ * @param down_id 下方向的 ID。
+ * @param choice 存储选择路径的向量。
+ * 计算从根节点到指定节点的选择路径。
+ */
 void ZddWithLinks::compute_lower_choice(int32_t node_id, count_t down_id,
                                         vector<uint16_t> &choice) noexcept {
     choice.clear();
@@ -1094,6 +885,14 @@ void ZddWithLinks::compute_lower_choice(int32_t node_id, count_t down_id,
     }
 }
 
+/**
+ * 初始化下方向的选择路径
+ * @param start_id 起始节点 ID。
+ * @param visited 记录访问过的节点。
+ * @param diff_choices 记录不同选择的索引。
+ * @param choices_buf 存储选择路径的缓冲区。
+ * 初始化从根节点到指定节点的选择路径。
+ */
 void ZddWithLinks::compute_lower_initial_choice(const int32_t start_id,
                                                 vector<uint32_t> &visited,
                                                 vector<size_t> &diff_choices,
@@ -1137,10 +936,18 @@ void ZddWithLinks::compute_lower_initial_choice(const int32_t start_id,
     }
 }
 
+/**
+ * 计算下方向的下一个选择路径
+ * @param visited 记录访问过的节点。
+ * @param diff_choices 记录不同选择的索引。
+ * @param choice_buf 存储选择路径的缓冲区。
+ * @return 如果没有更多选择路径则返回 true，否则返回 false。
+ * 计算从当前节点到下一个节点的选择路径。
+ */
 bool ZddWithLinks::compute_lower_next_choice(vector<uint32_t> &visited,
                                              vector<size_t> &diff_choices,
                                              vector<uint16_t> &choice_buf) {
-    // uncover
+    // 取消覆盖
     while (!diff_choices.empty()) {
         size_t change_idx = *(diff_choices.rbegin());
         diff_choices.pop_back();
@@ -1210,6 +1017,11 @@ bool ZddWithLinks::compute_lower_next_choice(vector<uint32_t> &visited,
     return false;
 }
 
+/**
+ * 隐藏指定的节点
+ * @param node_id 要隐藏的节点 ID。
+ * 隐藏指定的节点，更新父子链接。
+ */
 void ZddWithLinks::hide_node(const int32_t node_id) {
     Node &node = table_[node_id];
     //    cerr << "hide " << node_id << endl;
@@ -1253,6 +1065,11 @@ void ZddWithLinks::hide_node(const int32_t node_id) {
     }
 }
 
+/**
+ * 取消隐藏指定的节点
+ * @param node_id 要取消隐藏的节点 ID。
+ * 恢复指定节点的可见性，更新父子链接。
+ */
 void ZddWithLinks::unhide_node(const int32_t node_id) {
     Node &node = table_[node_id];
 
@@ -1300,24 +1117,11 @@ void ZddWithLinks::unhide_node(const int32_t node_id) {
     }
 }
 
-void ZddWithLinks::hide_node_cover_down(const int32_t node_id) {
-    Node &node = table_[node_id];
-
-    if (node.hi >= 0) {
-        auto hi_next = node.hi_next, hi_prev = node.hi_prev;
-        plink_set_prev(hi_next, hi_prev);
-        plink_set_next(hi_prev, hi_next);
-    }
-}
-void ZddWithLinks::unhide_node_cover_down(const int32_t node_id) {
-    Node &node = table_[node_id];
-    if (node.hi >= 0) {
-        auto hi_next = node.hi_next, hi_prev = node.hi_prev;
-        plink_set_prev(hi_next, node_id << 2UL | 1UL);
-        plink_set_next(hi_prev, node_id << 2UL | 1UL);
-    }
-}
-
+/**
+ * 隐藏cover_up类型的节点
+ * @param node_id 要隐藏的节点 ID。
+ * 隐藏cover_up类型的节点，更新父子链接。
+ */
 void ZddWithLinks::hide_node_cover_up(const int32_t node_id) {
 
     Node &node = table_[node_id];
@@ -1352,6 +1156,11 @@ void ZddWithLinks::hide_node_cover_up(const int32_t node_id) {
     }
 }
 
+/**
+ * 取消隐藏cover_up类型的节点
+ * @param node_id 要取消隐藏的节点 ID。
+ * 恢复cover_up类型节点的可见性，更新父子链接。
+ */
 void ZddWithLinks::unhide_node_cover_up(const int32_t node_id) {
     Node &node = table_[node_id];
 
@@ -1390,6 +1199,11 @@ void ZddWithLinks::unhide_node_cover_up(const int32_t node_id) {
     }
 }
 
+/**
+ * 隐藏upperzero类型的节点
+ * @param node_id 要隐藏的节点 ID。
+ * 隐藏upperzero类型的节点，更新父子链接。
+ */
 void ZddWithLinks::hide_node_upperzero(const int32_t node_id) {
     Node &node = table_[node_id];
     assert(node.count_hi > 0);
@@ -1407,6 +1221,11 @@ void ZddWithLinks::hide_node_upperzero(const int32_t node_id) {
     }
 }
 
+/**
+ * 取消隐藏upperzero类型的节点
+ * @param node_id 要取消隐藏的节点 ID。
+ * 恢复upperzero类型节点的可见性，更新父子链接。
+ */
 void ZddWithLinks::unhide_node_upperzero(const int32_t node_id) {
     Node &node = table_[node_id];
     if (node.lo >= 0) {
@@ -1424,6 +1243,11 @@ void ZddWithLinks::unhide_node_upperzero(const int32_t node_id) {
     }
 }
 
+/**
+ * 隐藏lowerzero类型的节点
+ * @param node_id 要隐藏的节点 ID。
+ * 隐藏lowerzero类型的节点，更新父子链接。
+ */
 void ZddWithLinks::hide_node_lowerzero(const int32_t node_id) {
     Node &node = table_[node_id];
     if (!plink_is_term(node.parents_head)) {
@@ -1459,6 +1283,11 @@ void ZddWithLinks::hide_node_lowerzero(const int32_t node_id) {
     }
 }
 
+/**
+ * 取消隐藏lowerzero类型的节点
+ * @param node_id 要取消隐藏的节点 ID。
+ * 恢复lowerzero类型节点的可见性，更新父子链接。
+ */
 void ZddWithLinks::unhide_node_lowerzero(const int32_t node_id) {
     Node &node = table_[node_id];
 
@@ -1496,6 +1325,11 @@ void ZddWithLinks::unhide_node_lowerzero(const int32_t node_id) {
     }
 }
 
+/**
+ * 检查DanceDD结构的有效性
+ * @return 如果结构有效则返回 false，否则返回 true。
+ * 检查DanceDD结构的完整性和一致性。
+ */
 bool ZddWithLinks::sanity() const {
     int pos, prev;
 
@@ -1531,7 +1365,7 @@ bool ZddWithLinks::sanity() const {
             }
             counter += node.count_upper * node.count_hi;
 
-            // check parent links
+            // 检查父链接
             plink_t prev_link = npos << 2 | 2LU;
             for (plink_t plink = node.parents_head;;
                  prev_link = plink, plink = plink_get_next(plink)) {
@@ -1564,7 +1398,7 @@ bool ZddWithLinks::sanity() const {
                 }
             }
 
-            // check child links
+            // 检查子链接
             if (node.lo >= 0) {
                 const auto &child = table_[node.lo];
                 if (node.var >= child.var) {
@@ -1624,7 +1458,7 @@ bool ZddWithLinks::sanity() const {
         }
     }
 
-    // check model count
+    // 检查模型计数
 
     if (header_[0].right == 0) return has_error;
 
@@ -1706,7 +1540,6 @@ bool ZddWithLinks::sanity() const {
             }
         }
     }
-}
 
     return has_error;
 }
